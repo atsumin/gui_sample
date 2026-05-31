@@ -3,6 +3,7 @@ import json
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
+from urllib.parse import quote
 import urllib.error
 import urllib.request
 
@@ -46,8 +47,8 @@ class ApiClient:
     def move(self, token, pos):
         return self._request("/move", "POST", {"player": token, "pos": pos})
 
-    def state(self):
-        return self._request("/state", "GET")
+    def state(self, token):
+        return self._request(f"/state?player={quote(token)}", "GET")
 
 
 class TicTacToeGUI:
@@ -59,6 +60,7 @@ class TicTacToeGUI:
         self.api = None
         self.token = None
         self.mark = None
+        self.game_id = None
         self.polling = False
 
         self._build_setup_frame()
@@ -129,8 +131,10 @@ class TicTacToeGUI:
             return
         self.token = res["player"]
         self.mark = res["mark"]
+        self.game_id = res.get("game_id")
         self._show_game()
-        self.status.set(f"あなたのマークは [{self.mark}] です。")
+        self.status.set(
+            f"部屋 {self.game_id} に参加しました。マークは [{self.mark}] です。")
         self.polling = True
         self.refresh()
 
@@ -139,6 +143,7 @@ class TicTacToeGUI:
         self.api = None
         self.token = None
         self.mark = None
+        self.game_id = None
         for b in self.cells:
             b["text"] = " "
             b["state"] = "normal"
@@ -167,7 +172,7 @@ class TicTacToeGUI:
         threading.Thread(target=self._fetch_and_update, daemon=True).start()
 
     def _fetch_and_update(self):
-        st = self.api.state()
+        st = self.api.state(self.token)
         self.root.after(0, lambda: self._apply_state(st))
 
     def _apply_state(self, st):
@@ -178,6 +183,7 @@ class TicTacToeGUI:
         board = st["board"]
         ready = st.get("ready", False)
         winner = st["winner"]
+        gid = st.get("game_id", self.game_id)
 
         # 盤面の表示は常に更新
         for i, c in enumerate(board):
@@ -188,18 +194,19 @@ class TicTacToeGUI:
             self._disable_all()
             count = st.get("players", 0)
             self.status.set(
-                f"対戦相手の参加を待っています...（{count}/2 人接続中）")
+                f"[部屋 {gid}] 対戦相手の参加を待っています..."
+                f"（{count}/2 人接続中）")
             return
 
         # ここから先は2人揃っている状態
         if winner == "draw":
-            self.status.set("引き分けです。")
+            self.status.set(f"[部屋 {gid}] 引き分けです。")
             self._disable_all()
             return
         if winner:
             won = (winner == self.mark)
             self.status.set(
-                f"勝者: {winner} "
+                f"[部屋 {gid}] 勝者: {winner} "
                 + ("（あなたの勝ち！）" if won else "（あなたの負け）"))
             self._disable_all()
             return
@@ -211,9 +218,11 @@ class TicTacToeGUI:
                 "normal" if (my_turn and c == " ") else "disabled")
 
         if my_turn:
-            self.status.set(f"あなた [{self.mark}] の手番です。")
+            self.status.set(
+                f"[部屋 {gid}] あなた [{self.mark}] の手番です。")
         else:
-            self.status.set(f"相手 [{st['turn']}] の手番を待っています...")
+            self.status.set(
+                f"[部屋 {gid}] 相手 [{st['turn']}] の手番を待っています...")
 
     def _disable_all(self):
         for b in self.cells:

@@ -80,9 +80,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self._guard():
             return
-        if self.path == "/state":
+        # /state?player=<token> で自分の部屋の状態を取得
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(self.path)
+        if parsed.path == "/state":
+            qs = parse_qs(parsed.query)
+            token = (qs.get("player", [None])[0]
+                     or self.headers.get("X-Player-Token"))
             with lock:
-                result = controller.state()
+                result = controller.state(token)
             self._send(200, result)
         else:
             self._send(404, {"ok": False, "error": "not found"})
